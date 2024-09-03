@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
 const WebRTC: React.FC = () => {
-    const [socket] = useState(() => io('http://localhost:3001'));
+    const [socket] = useState(() => io('http://46.249.99.178:3001/'));
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
