@@ -23,7 +23,7 @@ FROM node:18-alpine
 RUN npm install -g serve
 
 # Copy the built files from the previous stage
-COPY --from=build /app/dist /app
+COPY --from=build /app/build /app
 
 # Expose the desired port
 EXPOSE 25254
