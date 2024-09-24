@@ -2,6 +2,9 @@ import React, { useRef, useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
 const WebRTC: React.FC = () => {
+    console.log('sssssssssssssssssssssssssssssssssssssssss');
+
+    console.log('https://webrtc-api.saeedghofrani.com');
     const [socket] = useState(() => io('https://webrtc-api.saeedghofrani.com'));
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);

@@ -7,6 +7,9 @@ import reportWebVitals from './reportWebVitals';
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
+console.log('sssssssssssssssssssssssssssssssssssssssss');
+
+console.log('https://webrtc-api.saeedghofrani.com');
 root.render(
   <React.StrictMode>
     <App />
