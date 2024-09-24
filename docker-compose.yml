@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  webrtc-client-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: saeedghofrani/webrtc-client:latest
+    container_name: webrtc-client
+    ports:
+      - "25254:25254"          # Host:Container
+    restart: unless-stopped
+    networks:
+      - webnet
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:25254"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  webnet:
+    driver: bridge
