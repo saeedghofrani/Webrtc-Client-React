@@ -169,12 +169,19 @@ const WebRTC: React.FC = () => {
 
   return (
     <main className="meeting-shell">
-      <section className="meeting-hero">
+      <section className="meeting-topbar">
         <div>
           <p className="eyebrow">WebRTC meeting room</p>
-          <h1>Secure video, voice, and chat.</h1>
+          <h1>Video calls with voice and chat</h1>
           <p className="lead">Create a room, share the link, and connect peer-to-peer with Socket.IO signaling.</p>
         </div>
+        <div className="meeting-status">
+          <span className={joined ? 'status-dot online' : 'status-dot'} />
+          <span>{joined ? `Room ${roomId}` : 'Ready'}</span>
+        </div>
+      </section>
+
+      <section className="meeting-workspace">
         <div className="room-card">
           <label>
             Your name
@@ -189,6 +196,11 @@ const WebRTC: React.FC = () => {
             <button type="button" className="secondary" onClick={() => navigator.clipboard?.writeText(shareUrl)}>Copy link</button>
           </div>
           <p className="status">{status}</p>
+        </div>
+
+        <div className="participants">
+          <strong>Participants</strong>
+          {users.length === 0 ? <span>No one joined yet.</span> : users.map((user) => <span key={user.id}>{user.name}</span>)}
         </div>
       </section>
 
@@ -209,13 +221,13 @@ const WebRTC: React.FC = () => {
           <button type="button" onClick={toggleCamera}>{cameraOn ? 'Hide camera' : 'Show camera'}</button>
           <button type="button" className="danger" onClick={() => window.location.reload()}>Leave room</button>
         </div>
-        <div className="participants">
-          <strong>Participants</strong>
-          {users.length === 0 ? <span>No one joined yet.</span> : users.map((user) => <span key={user.id}>{user.name}</span>)}
-        </div>
       </section>
 
       <section className="chat-panel">
+        <header>
+          <strong>Room chat</strong>
+          <span>{messages.length} messages</span>
+        </header>
         <div className="messages">
           {messages.length === 0 ? <p>No messages yet.</p> : messages.map((message) => (
             <article key={message.id}>
