@@ -1,13 +1,8 @@
-import React from 'react';
 import WebRTC from './components/WebRTC';
+import './App.css';
 
 function App() {
-  return (
-    <div className="App">
-      <h1>WebRTC Demo</h1>
-      <WebRTC />
-    </div>
-  );
+  return <WebRTC />;
 }
 
 export default App;

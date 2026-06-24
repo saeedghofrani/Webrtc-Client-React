@@ -1,38 +1,242 @@
-.App {
-  text-align: center;
+* {
+  box-sizing: border-box;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+body {
+  margin: 0;
+  min-width: 320px;
+  color: #e5edf8;
+  background: #0f172a;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+button,
+input {
+  font: inherit;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+button {
+  min-height: 2.8rem;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  color: #06111f;
+  background: #67e8f9;
+  font-weight: 800;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+button.secondary {
+  color: #dbeafe;
+  background: #1e293b;
+  border: 1px solid #334155;
+}
+
+button.danger {
+  color: #fee2e2;
+  background: #7f1d1d;
+}
+
+input {
+  width: 100%;
+  min-height: 2.7rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  padding: 0.65rem 0.75rem;
+  color: #e2e8f0;
+  background: #020617;
+}
+
+.meeting-shell {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0;
+}
+
+.meeting-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.75fr);
+  gap: 1.5rem;
+  align-items: end;
+}
+
+.eyebrow {
+  margin: 0 0 0.8rem;
+  color: #67e8f9;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  max-width: 11ch;
+  color: #f8fafc;
+  font-size: clamp(3.5rem, 8vw, 7rem);
+  line-height: 0.88;
+  letter-spacing: 0;
+}
+
+.lead {
+  max-width: 44rem;
+  color: #a7b6ca;
+  font-size: 1.15rem;
+  line-height: 1.7;
+}
+
+.room-card,
+.video-panel,
+.participants,
+.chat-panel {
+  border: 1px solid #263449;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+}
+
+.room-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.room-card label {
+  display: grid;
+  gap: 0.45rem;
+  color: #b6c3d5;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.button-row,
+.controls {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
-.App-link {
-  color: #61dafb;
+.status {
+  margin: 0;
+  color: #93c5fd;
+  font-size: 0.9rem;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+.meeting-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.video-panel {
+  position: relative;
+  overflow: hidden;
+  min-height: 22rem;
+  background: #020617;
+}
+
+.video-panel video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 22rem;
+  object-fit: cover;
+  background: linear-gradient(135deg, #020617, #172554);
+}
+
+.video-panel span {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  color: #dbeafe;
+  background: rgba(2, 6, 23, 0.72);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.35fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.participants {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+}
+
+.participants strong {
+  color: #f8fafc;
+}
+
+.participants span {
+  color: #b6c3d5;
+  font-size: 0.9rem;
+}
+
+.chat-panel {
+  margin-top: 1rem;
+  overflow: hidden;
+}
+
+.messages {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  min-height: 12rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.messages p {
+  margin: 0;
+  color: #a7b6ca;
+}
+
+.messages article {
+  border-radius: 8px;
+  background: #111c30;
+  padding: 0.75rem;
+}
+
+.messages strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #67e8f9;
+}
+
+.chat-panel form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  border-top: 1px solid #263449;
+  padding: 1rem;
+}
+
+@media (max-width: 820px) {
+  .meeting-hero,
+  .meeting-grid,
+  .control-grid {
+    grid-template-columns: 1fr;
   }
-  to {
-    transform: rotate(360deg);
+
+  h1 {
+    max-width: 9ch;
+  }
+
+  .video-panel,
+  .video-panel video {
+    min-height: 16rem;
   }
 }
