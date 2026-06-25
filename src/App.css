@@ -299,6 +299,25 @@ h1 {
   font-weight: 700;
 }
 
+.diagnostics {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid #dadce0;
+  padding-top: 1rem;
+}
+
+.diagnostics p {
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  color: #3c4043;
+  background: #f8fafd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .chat-panel {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;

@@ -15,7 +15,19 @@ interface RoomUser {
 
 type SidePanel = 'chat' | 'people';
 
-const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+const iceServers: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+const turnUrls = process.env.REACT_APP_TURN_URLS?.split(',').map((url) => url.trim()).filter(Boolean);
+if (turnUrls?.length) {
+  iceServers.push({
+    urls: turnUrls,
+    username: process.env.REACT_APP_TURN_USERNAME,
+    credential: process.env.REACT_APP_TURN_CREDENTIAL,
+  });
+}
 
 function randomRoom() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -39,6 +51,7 @@ const WebRTC: React.FC = () => {
   const [sidePanel, setSidePanel] = useState<SidePanel>('chat');
   const [copyLabel, setCopyLabel] = useState('Copy link');
   const [remoteConnected, setRemoteConnected] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<string[]>([]);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -58,6 +71,11 @@ const WebRTC: React.FC = () => {
     return () => leaveRoom(false);
   }, []);
 
+  function addDiagnostic(message: string) {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setDiagnostics((current) => [`${time} ${message}`, ...current].slice(0, 8));
+  }
+
   function getSocket() {
     if (!socketRef.current) {
       const endpoint = process.env.REACT_APP_SIGNALING_URL || window.location.origin;
@@ -68,16 +86,27 @@ const WebRTC: React.FC = () => {
   }
 
   function bindSocket(socket: Socket) {
-    socket.on('connect', () => setStatus(joined ? 'Connected to signaling' : 'Ready to join'));
-    socket.on('connect_error', () => setStatus('Could not connect to signaling server'));
-    socket.on('room-users', (roomUsers: RoomUser[]) => setUsers(roomUsers));
+    socket.on('connect', () => {
+      addDiagnostic(`Signaling connected: ${socket.id}`);
+      setStatus(joined ? 'Connected to signaling' : 'Ready to join');
+    });
+    socket.on('connect_error', (error) => {
+      addDiagnostic(`Signaling failed: ${error.message}`);
+      setStatus('Could not connect to signaling server');
+    });
+    socket.on('room-users', (roomUsers: RoomUser[]) => {
+      addDiagnostic(`Room has ${roomUsers.length} participant${roomUsers.length === 1 ? '' : 's'}`);
+      setUsers(roomUsers);
+    });
     socket.on('peer-ready', async ({ peerId, name: peerName }: { peerId: string; name: string }) => {
       remotePeerIdRef.current = peerId;
+      addDiagnostic(`Peer ready: ${peerName || peerId}`);
       setStatus(`${peerName || 'Peer'} joined. Connecting...`);
       await createOffer(peerId);
     });
     socket.on('offer', async ({ from, offer }: { from: string; offer: RTCSessionDescriptionInit }) => {
       remotePeerIdRef.current = from;
+      addDiagnostic('Received offer');
       const peer = await ensurePeer();
       await peer.setRemoteDescription(offer);
       await flushQueuedCandidates();
@@ -89,6 +118,7 @@ const WebRTC: React.FC = () => {
     socket.on('answer', async ({ from, answer }: { from: string; answer: RTCSessionDescriptionInit }) => {
       remotePeerIdRef.current = from;
       if (!peerRef.current) return;
+      addDiagnostic('Received answer');
       await peerRef.current.setRemoteDescription(answer);
       await flushQueuedCandidates();
       setStatus('Media negotiation complete');
@@ -100,6 +130,7 @@ const WebRTC: React.FC = () => {
         queuedCandidatesRef.current.push(candidate);
         return;
       }
+      addDiagnostic('Received ICE candidate');
       await peerRef.current.addIceCandidate(candidate);
     });
     socket.on('chat-message', (message: ChatMessage) => {
@@ -109,6 +140,7 @@ const WebRTC: React.FC = () => {
       if (remotePeerIdRef.current && remotePeerIdRef.current !== peerId) return;
       remotePeerIdRef.current = null;
       setRemoteConnected(false);
+      addDiagnostic('Peer left');
       setStatus('The other participant left');
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
       peerRef.current?.close();
@@ -140,18 +172,32 @@ const WebRTC: React.FC = () => {
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
     peer.onicecandidate = (event) => {
       if (!event.candidate) return;
+      addDiagnostic(`Sending ICE candidate: ${event.candidate.type || 'candidate'}`);
       getSocket().emit('ice-candidate', {
         roomId: roomIdRef.current,
         to: remotePeerIdRef.current,
         candidate: event.candidate,
       });
     };
+    peer.onicecandidateerror = (event) => {
+      const iceError = event as RTCPeerConnectionIceErrorEvent;
+      addDiagnostic(`ICE candidate error: ${iceError.errorText || iceError.errorCode}`);
+    };
+    peer.oniceconnectionstatechange = () => {
+      addDiagnostic(`ICE state: ${peer.iceConnectionState}`);
+      if (peer.iceConnectionState === 'failed') {
+        setStatus('ICE failed. This network may require a TURN relay.');
+      }
+    };
     peer.ontrack = (event) => {
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+      const [remoteStream] = event.streams;
+      if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
+      addDiagnostic(`Remote ${event.track.kind} track received`);
       setRemoteConnected(true);
       setStatus('Connected');
     };
     peer.onconnectionstatechange = () => {
+      addDiagnostic(`Peer state: ${peer.connectionState}`);
       if (peer.connectionState === 'connected') {
         setRemoteConnected(true);
         setStatus('Connected');
@@ -192,6 +238,7 @@ const WebRTC: React.FC = () => {
     const peer = await ensurePeer();
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
+    addDiagnostic('Sending offer');
     getSocket().emit('offer', { roomId: roomIdRef.current, to: peerId, offer });
   }
 
@@ -296,6 +343,10 @@ const WebRTC: React.FC = () => {
                 <div className="people-list">
                   <strong>{users.length} participants</strong>
                   {users.map((user) => <span key={user.id}>{user.name}</span>)}
+                  <div className="diagnostics">
+                    <strong>Connection</strong>
+                    {diagnostics.length === 0 ? <p>No connection events yet.</p> : diagnostics.map((item) => <p key={item}>{item}</p>)}
+                  </div>
                 </div>
               ) : (
                 <div className="chat-panel">
