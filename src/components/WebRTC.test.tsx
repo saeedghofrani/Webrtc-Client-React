@@ -29,9 +29,10 @@ class FakeSocket {
 }
 
 const mockSocket = new FakeSocket();
+const mockIo = jest.fn<FakeSocket, [string, any]>(() => mockSocket);
 
 jest.mock('socket.io-client', () => ({
-  io: () => mockSocket,
+  io: (endpoint: string, options: any) => mockIo(endpoint, options),
 }));
 
 const createOffer = jest.fn<Promise<RTCSessionDescriptionInit>, []>(async () => ({ type: 'offer', sdp: 'offer-sdp' }));
@@ -79,6 +80,7 @@ beforeEach(() => {
   mockSocket.handlers = {};
   mockSocket.emitted = [];
   jest.clearAllMocks();
+  mockIo.mockImplementation(() => mockSocket);
   Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
   window.location.hash = '';
   Object.defineProperty(navigator, 'mediaDevices', {
@@ -95,6 +97,7 @@ test('joins a room without creating an untargeted peer connection', async () => 
   fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
 
   await waitFor(() => expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(true));
+  expect(mockIo).toHaveBeenCalledWith(window.location.origin, { transports: ['polling', 'websocket'] });
   expect(window.RTCPeerConnection).not.toHaveBeenCalled;
 });
 

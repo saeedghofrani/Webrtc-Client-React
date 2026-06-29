@@ -110,7 +110,7 @@ const WebRTC: React.FC = () => {
   function getSocket() {
     if (!socketRef.current) {
       const endpoint = process.env.REACT_APP_SIGNALING_URL || window.location.origin;
-      socketRef.current = io(endpoint, { transports: ['websocket', 'polling'] });
+      socketRef.current = io(endpoint, { transports: ['polling', 'websocket'] });
       bindSocket(socketRef.current);
     }
     return socketRef.current;
