@@ -437,6 +437,34 @@ h1 {
     min-height: 28rem;
   }
 
+  .meet-layout:not(.in-call) {
+    gap: 0.65rem;
+  }
+
+  .meet-layout:not(.in-call) .stage {
+    min-height: 12.5rem;
+    border-radius: 14px;
+  }
+
+  .meet-layout:not(.in-call) .empty-video {
+    gap: 0.35rem;
+    padding: 1rem;
+  }
+
+  .meet-layout:not(.in-call) .empty-video span {
+    width: 4.4rem;
+    height: 4.4rem;
+    font-size: 1.5rem;
+  }
+
+  .meet-layout:not(.in-call) .empty-video strong {
+    font-size: 1rem;
+  }
+
+  .meet-layout:not(.in-call) .empty-video p {
+    display: none;
+  }
+
   .local-tile {
     width: 44%;
     min-width: 9.2rem;
@@ -444,5 +472,9 @@ h1 {
 
   .control-bar {
     flex-wrap: wrap;
+  }
+
+  .control-bar button:disabled {
+    display: none;
   }
 }
