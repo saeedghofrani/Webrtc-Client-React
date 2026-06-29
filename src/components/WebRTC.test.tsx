@@ -101,7 +101,7 @@ test('joins a room without creating an untargeted peer connection', async () => 
   expect(window.RTCPeerConnection).not.toHaveBeenCalled;
 });
 
-test('creates a separate offer and peer connection for each remote participant', async () => {
+test('only connects to the first remote participant in a two-person room', async () => {
   render(<WebRTC />);
 
   fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
@@ -112,12 +112,52 @@ test('creates a separate offer and peer connection for each remote participant',
     mockSocket.dispatch('peer-ready', { peerId: 'peer-b', name: 'Ben' });
   });
 
-  await waitFor(() => expect(createOffer).toHaveBeenCalledTimes(2));
-  expect(window.RTCPeerConnection).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
+  expect(window.RTCPeerConnection).toHaveBeenCalledTimes(1);
   expect(mockSocket.emitted.filter((item) => item.event === 'offer').map((item) => item.payload.to)).toEqual([
     'peer-a',
-    'peer-b',
   ]);
+});
+
+test('requests mobile-friendly media with echo cancellation', async () => {
+  const getUserMedia = jest.fn(async () => stream);
+  Object.defineProperty(window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia },
+  });
+
+  render(<WebRTC />);
+
+  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
+
+  await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+  expect(getUserMedia).toHaveBeenCalledWith({
+    video: {
+      width: { ideal: 640, max: 960 },
+      height: { ideal: 360, max: 540 },
+      frameRate: { ideal: 24, max: 24 },
+      facingMode: 'user',
+    },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+});
+
+test('shows room full instead of joining as a third participant', async () => {
+  render(<WebRTC />);
+
+  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
+  await waitFor(() => expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(true));
+
+  act(() => {
+    mockSocket.dispatch('room-full', { roomId: 'ABC123' });
+  });
+
+  expect(screen.getByText('This room already has two people.')).toBeInTheDocument();
+  expect(screen.queryByText('People')).not.toBeInTheDocument();
 });
 
 test('does not join when camera or microphone devices are unavailable', async () => {

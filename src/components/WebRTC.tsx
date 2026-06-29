@@ -27,6 +27,20 @@ interface DeviceState {
 
 type SidePanel = 'chat' | 'people';
 
+const mediaConstraints: MediaStreamConstraints = {
+  video: {
+    width: { ideal: 640, max: 960 },
+    height: { ideal: 360, max: 540 },
+    frameRate: { ideal: 24, max: 24 },
+    facingMode: 'user',
+  },
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+};
+
 const iceServers: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -92,6 +106,8 @@ const WebRTC: React.FC = () => {
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const roomIdRef = useRef(roomId);
+  const joinedRef = useRef(false);
+  const acceptedPeerIdRef = useRef<string | null>(null);
   const usersRef = useRef<RoomUser[]>([]);
   const queuedCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
@@ -103,6 +119,10 @@ const WebRTC: React.FC = () => {
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
+
+  useEffect(() => {
+    joinedRef.current = joined;
+  }, [joined]);
 
   useEffect(() => {
     return () => leaveRoom(false);
@@ -125,7 +145,7 @@ const WebRTC: React.FC = () => {
   function bindSocket(socket: Socket) {
     socket.on('connect', () => {
       addDiagnostic(`Signaling connected: ${socket.id}`);
-      setStatus(joined ? 'Connected to signaling' : 'Ready to join');
+      setStatus(joinedRef.current ? 'Connected to signaling' : 'Ready to join');
     });
     socket.on('connect_error', (error) => {
       addDiagnostic(`Signaling failed: ${error.message}`);
@@ -139,7 +159,21 @@ const WebRTC: React.FC = () => {
         name: roomUsers.find((user) => user.id === remote.peerId)?.name || remote.name,
       })));
     });
+    socket.on('room-joined', ({ roomId: acceptedRoom, users: roomUsers = [] }: { roomId: string; users?: RoomUser[] }) => {
+      setJoined(true);
+      setUsers(roomUsers);
+      setStatus(`Waiting for your sister in ${acceptedRoom}.`);
+    });
+    socket.on('room-full', () => {
+      leaveRoom(false);
+      setStatus('This room already has two people.');
+    });
     socket.on('peer-ready', async ({ peerId, name: peerName }: { peerId: string; name: string }) => {
+      if (acceptedPeerIdRef.current && acceptedPeerIdRef.current !== peerId) {
+        addDiagnostic('Ignored extra peer because this app is limited to two people');
+        return;
+      }
+      acceptedPeerIdRef.current = peerId;
       addDiagnostic(`Peer ready: ${peerName || peerId}`);
       setStatus(`${peerName || 'Peer'} joined. Connecting...`);
       upsertRemote(peerId, peerName || 'Guest');
@@ -197,7 +231,7 @@ const WebRTC: React.FC = () => {
       }
       let stream: MediaStream;
       try {
-        stream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        stream = await window.navigator.mediaDevices.getUserMedia(mediaConstraints);
       } catch (error) {
         const deviceError = error instanceof DOMException ? error.name : '';
         const blocked = ['NotAllowedError', 'SecurityError', 'PermissionDeniedError'].includes(deviceError);
@@ -239,7 +273,8 @@ const WebRTC: React.FC = () => {
           remote.peerId === peerId ? { ...remote, name: peerName || remote.name } : remote
         ));
       }
-      return [...current, { peerId, name: peerName || 'Guest', stream: null, connected: false }];
+      if (current.length > 0) return current;
+      return [{ peerId, name: peerName || 'Guest', stream: null, connected: false }];
     });
   }
 
@@ -321,8 +356,7 @@ const WebRTC: React.FC = () => {
       const stream = await startMedia();
       if (!stream) return;
       getSocket().emit('join-room', { roomId: cleanRoom, name: name.trim() || 'Guest' });
-      setJoined(true);
-      setStatus(`Joined ${cleanRoom}. Waiting for another participant.`);
+      setStatus('Joining room...');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not access camera/microphone');
     }
@@ -353,8 +387,11 @@ const WebRTC: React.FC = () => {
   function leaveRoom(reload = true) {
     peersRef.current.forEach((peer) => peer.close());
     peersRef.current.clear();
+    acceptedPeerIdRef.current = null;
     queuedCandidatesRef.current.clear();
     setRemoteStreams([]);
+    setUsers([]);
+    setJoined(false);
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     socketRef.current?.disconnect();
@@ -365,6 +402,7 @@ const WebRTC: React.FC = () => {
   function removePeer(peerId: string) {
     peersRef.current.get(peerId)?.close();
     peersRef.current.delete(peerId);
+    if (acceptedPeerIdRef.current === peerId) acceptedPeerIdRef.current = null;
     queuedCandidatesRef.current.delete(peerId);
     setRemoteStreams((current) => current.filter((remote) => remote.peerId !== peerId));
   }
@@ -386,7 +424,7 @@ const WebRTC: React.FC = () => {
   const hasRemoteStreams = remoteStreams.length > 0;
 
   return (
-    <main className="meet-shell">
+    <main className={joined ? 'meet-shell in-call-shell' : 'meet-shell'}>
       <header className="meet-topbar">
         <div>
           <p className="eyebrow">WebRTC Meet</p>

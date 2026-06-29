@@ -477,4 +477,115 @@ h1 {
   .control-bar button:disabled {
     display: none;
   }
+
+  .in-call-shell {
+    position: fixed;
+    inset: 0;
+    display: block;
+    min-height: 100svh;
+    padding: 0;
+    overflow: hidden;
+    background: #111214;
+  }
+
+  .in-call-shell .meet-topbar {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    left: 0;
+    right: 0;
+    min-height: 0;
+    padding: 0.75rem;
+    background: linear-gradient(180deg, rgba(17, 18, 20, 0.88), rgba(17, 18, 20, 0));
+  }
+
+  .in-call-shell .eyebrow {
+    display: none;
+  }
+
+  .in-call-shell h1 {
+    max-width: 11rem;
+    font-size: 0.95rem;
+    line-height: 1.15;
+    word-break: break-word;
+  }
+
+  .in-call-shell .meeting-status {
+    max-width: 11.5rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.76rem;
+    line-height: 1.2;
+    background: rgba(43, 44, 48, 0.82);
+    backdrop-filter: blur(12px);
+  }
+
+  .in-call-shell .meet-layout {
+    display: block;
+    width: 100%;
+    height: 100svh;
+  }
+
+  .in-call-shell .stage {
+    width: 100%;
+    height: 100svh;
+    min-height: 100svh;
+    border-radius: 0;
+  }
+
+  .in-call-shell .remote-grid,
+  .in-call-shell .remote-tile {
+    min-height: 100svh;
+  }
+
+  .in-call-shell .empty-video {
+    padding: 1.5rem;
+  }
+
+  .in-call-shell .empty-video p {
+    display: block;
+    max-width: 16rem;
+  }
+
+  .in-call-shell .local-tile {
+    right: 0.75rem;
+    bottom: 5.8rem;
+    width: min(9rem, 36vw);
+    min-width: 6.6rem;
+    border-radius: 14px;
+  }
+
+  .in-call-shell .tile-label {
+    left: 0.65rem;
+    bottom: 0.65rem;
+    max-width: calc(100% - 1.3rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.76rem;
+  }
+
+  .in-call-shell .side-panel {
+    display: none;
+  }
+
+  .in-call-shell .control-bar {
+    position: absolute;
+    z-index: 6;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0.75rem 0.65rem max(0.75rem, env(safe-area-inset-bottom));
+    background: linear-gradient(0deg, rgba(17, 18, 20, 0.96), rgba(17, 18, 20, 0));
+  }
+
+  .in-call-shell .round-control {
+    min-width: 0;
+    min-height: 3rem;
+    padding: 0.6rem 0.35rem;
+    border-radius: 18px;
+    font-size: 0.78rem;
+  }
 }
