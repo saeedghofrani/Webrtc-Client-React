@@ -394,6 +394,7 @@ const WebRTC: React.FC = () => {
     setJoined(false);
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
     socketRef.current?.disconnect();
     socketRef.current = null;
     if (reload) window.location.reload();

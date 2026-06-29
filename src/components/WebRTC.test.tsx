@@ -158,6 +158,7 @@ test('shows room full instead of joining as a third participant', async () => {
 
   expect(screen.getByText('This room already has two people.')).toBeInTheDocument();
   expect(screen.queryByText('People')).not.toBeInTheDocument();
+  expect((document.querySelector('.local-tile video') as HTMLVideoElement | null)?.srcObject).toBeNull();
 });
 
 test('does not join when camera or microphone devices are unavailable', async () => {
