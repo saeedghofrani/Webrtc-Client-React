@@ -13,7 +13,7 @@ services:
     image: saeedghofrani/webrtc-client:latest
     container_name: webrtc-client
     ports:
-      - "25254:25254"          # Host:Container
+      - "127.0.0.1:25254:25254"
     restart: unless-stopped
     networks:
       - webnet

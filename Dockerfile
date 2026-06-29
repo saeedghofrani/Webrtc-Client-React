@@ -29,6 +29,8 @@ RUN npm run build
 # Stage 2: Serve the application with a simple Node.js server (serve)
 FROM node:18-alpine
 
+RUN apk add --no-cache curl
+
 # Install 'serve' globally
 RUN npm install -g serve
 
