@@ -318,7 +318,8 @@ const WebRTC: React.FC = () => {
       setRoomId(cleanRoom);
       roomIdRef.current = cleanRoom;
       setStatus('Starting camera and microphone...');
-      await startMedia();
+      const stream = await startMedia();
+      if (!stream) return;
       getSocket().emit('join-room', { roomId: cleanRoom, name: name.trim() || 'Guest' });
       setJoined(true);
       setStatus(`Joined ${cleanRoom}. Waiting for another participant.`);

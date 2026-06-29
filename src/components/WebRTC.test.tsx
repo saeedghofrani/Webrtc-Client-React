@@ -119,3 +119,19 @@ test('creates a separate offer and peer connection for each remote participant',
     'peer-b',
   ]);
 });
+
+test('does not join when camera or microphone devices are unavailable', async () => {
+  Object.defineProperty(window.navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: jest.fn(() => Promise.reject(new DOMException('No devices', 'NotFoundError'))),
+    },
+  });
+
+  render(<WebRTC />);
+
+  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
+
+  expect(await screen.findByText('No working camera or microphone was found on this device.')).toBeInTheDocument();
+  expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(false);
+});
