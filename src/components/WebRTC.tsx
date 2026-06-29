@@ -13,6 +13,13 @@ interface RoomUser {
   name: string;
 }
 
+interface RemoteStream {
+  peerId: string;
+  name: string;
+  stream: MediaStream | null;
+  connected: boolean;
+}
+
 type SidePanel = 'chat' | 'people';
 
 const iceServers: RTCIceServer[] = [
@@ -37,6 +44,27 @@ function normalizeRoom(value: string) {
   return value.replace(/[^a-z0-9-]/gi, '').slice(0, 24).toUpperCase();
 }
 
+const RemoteVideoTile: React.FC<{ remote: RemoteStream }> = ({ remote }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = remote.stream;
+  }, [remote.stream]);
+
+  return (
+    <div className={remote.connected ? 'video-tile remote-tile connected' : 'video-tile remote-tile'}>
+      <video ref={videoRef} autoPlay playsInline />
+      {!remote.connected && (
+        <div className="empty-video compact">
+          <span>{remote.name.slice(0, 2).toUpperCase()}</span>
+          <strong>Connecting</strong>
+        </div>
+      )}
+      <div className="tile-label">{remote.name || 'Remote participant'}</div>
+    </div>
+  );
+};
+
 const WebRTC: React.FC = () => {
   const initialRoom = useMemo(() => normalizeRoom(window.location.hash.replace('#', '')) || randomRoom(), []);
   const [roomId, setRoomId] = useState(initialRoom);
@@ -50,22 +78,25 @@ const WebRTC: React.FC = () => {
   const [chatText, setChatText] = useState('');
   const [sidePanel, setSidePanel] = useState<SidePanel>('chat');
   const [copyLabel, setCopyLabel] = useState('Copy link');
-  const [remoteConnected, setRemoteConnected] = useState(false);
+  const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
   const [diagnostics, setDiagnostics] = useState<string[]>([]);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const socketRef = useRef<Socket | null>(null);
-  const peerRef = useRef<RTCPeerConnection | null>(null);
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const roomIdRef = useRef(roomId);
-  const remotePeerIdRef = useRef<string | null>(null);
-  const queuedCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const usersRef = useRef<RoomUser[]>([]);
+  const queuedCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
   useEffect(() => {
     roomIdRef.current = roomId;
     window.history.replaceState(null, '', `#${roomId}`);
   }, [roomId]);
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
 
   useEffect(() => {
     return () => leaveRoom(false);
@@ -97,54 +128,53 @@ const WebRTC: React.FC = () => {
     socket.on('room-users', (roomUsers: RoomUser[]) => {
       addDiagnostic(`Room has ${roomUsers.length} participant${roomUsers.length === 1 ? '' : 's'}`);
       setUsers(roomUsers);
+      setRemoteStreams((current) => current.map((remote) => ({
+        ...remote,
+        name: roomUsers.find((user) => user.id === remote.peerId)?.name || remote.name,
+      })));
     });
     socket.on('peer-ready', async ({ peerId, name: peerName }: { peerId: string; name: string }) => {
-      remotePeerIdRef.current = peerId;
       addDiagnostic(`Peer ready: ${peerName || peerId}`);
       setStatus(`${peerName || 'Peer'} joined. Connecting...`);
+      upsertRemote(peerId, peerName || 'Guest');
       await createOffer(peerId);
     });
     socket.on('offer', async ({ from, offer }: { from: string; offer: RTCSessionDescriptionInit }) => {
-      remotePeerIdRef.current = from;
       addDiagnostic('Received offer');
-      const peer = await ensurePeer();
+      upsertRemote(from, findUserName(from));
+      const peer = await ensurePeer(from);
       await peer.setRemoteDescription(offer);
-      await flushQueuedCandidates();
+      await flushQueuedCandidates(from);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       socket.emit('answer', { roomId: roomIdRef.current, to: from, answer });
       setStatus('Answer sent. Establishing media...');
     });
     socket.on('answer', async ({ from, answer }: { from: string; answer: RTCSessionDescriptionInit }) => {
-      remotePeerIdRef.current = from;
-      if (!peerRef.current) return;
+      const peer = peersRef.current.get(from);
+      if (!peer) return;
       addDiagnostic('Received answer');
-      await peerRef.current.setRemoteDescription(answer);
-      await flushQueuedCandidates();
+      await peer.setRemoteDescription(answer);
+      await flushQueuedCandidates(from);
       setStatus('Media negotiation complete');
     });
     socket.on('ice-candidate', async ({ from, candidate }: { from: string; candidate: RTCIceCandidateInit }) => {
-      remotePeerIdRef.current = from;
       if (!candidate) return;
-      if (!peerRef.current?.remoteDescription) {
-        queuedCandidatesRef.current.push(candidate);
+      const peer = peersRef.current.get(from);
+      if (!peer?.remoteDescription) {
+        queueCandidate(from, candidate);
         return;
       }
       addDiagnostic('Received ICE candidate');
-      await peerRef.current.addIceCandidate(candidate);
+      await peer.addIceCandidate(candidate);
     });
     socket.on('chat-message', (message: ChatMessage) => {
       setMessages((current) => [...current, message]);
     });
     socket.on('peer-left', ({ peerId }: { peerId: string }) => {
-      if (remotePeerIdRef.current && remotePeerIdRef.current !== peerId) return;
-      remotePeerIdRef.current = null;
-      setRemoteConnected(false);
       addDiagnostic('Peer left');
       setStatus('The other participant left');
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-      peerRef.current?.close();
-      peerRef.current = null;
+      removePeer(peerId);
     });
   }
 
@@ -163,10 +193,33 @@ const WebRTC: React.FC = () => {
     return localStreamRef.current;
   }
 
-  async function ensurePeer() {
+  function findUserName(peerId: string) {
+    return usersRef.current.find((user) => user.id === peerId)?.name || 'Guest';
+  }
+
+  function upsertRemote(peerId: string, peerName: string) {
+    setRemoteStreams((current) => {
+      const existing = current.find((remote) => remote.peerId === peerId);
+      if (existing) {
+        return current.map((remote) => (
+          remote.peerId === peerId ? { ...remote, name: peerName || remote.name } : remote
+        ));
+      }
+      return [...current, { peerId, name: peerName || 'Guest', stream: null, connected: false }];
+    });
+  }
+
+  function updateRemote(peerId: string, updates: Partial<RemoteStream>) {
+    setRemoteStreams((current) => current.map((remote) => (
+      remote.peerId === peerId ? { ...remote, ...updates } : remote
+    )));
+  }
+
+  async function ensurePeer(peerId: string) {
     const stream = await startMedia();
     if (!stream) throw new Error('Media unavailable');
-    if (peerRef.current) return peerRef.current;
+    const existingPeer = peersRef.current.get(peerId);
+    if (existingPeer) return existingPeer;
 
     const peer = new RTCPeerConnection({ iceServers });
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
@@ -175,7 +228,7 @@ const WebRTC: React.FC = () => {
       addDiagnostic(`Sending ICE candidate: ${event.candidate.type || 'candidate'}`);
       getSocket().emit('ice-candidate', {
         roomId: roomIdRef.current,
-        to: remotePeerIdRef.current,
+        to: peerId,
         candidate: event.candidate,
       });
     };
@@ -191,31 +244,37 @@ const WebRTC: React.FC = () => {
     };
     peer.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
       addDiagnostic(`Remote ${event.track.kind} track received`);
-      setRemoteConnected(true);
+      updateRemote(peerId, { stream: remoteStream || null, connected: Boolean(remoteStream) });
       setStatus('Connected');
     };
     peer.onconnectionstatechange = () => {
       addDiagnostic(`Peer state: ${peer.connectionState}`);
       if (peer.connectionState === 'connected') {
-        setRemoteConnected(true);
+        updateRemote(peerId, { connected: true });
         setStatus('Connected');
       }
       if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) {
-        setRemoteConnected(false);
+        updateRemote(peerId, { connected: false });
         setStatus(`Peer connection ${peer.connectionState}`);
       }
     };
-    peerRef.current = peer;
+    peersRef.current.set(peerId, peer);
     return peer;
   }
 
-  async function flushQueuedCandidates() {
-    if (!peerRef.current?.remoteDescription) return;
-    const queued = queuedCandidatesRef.current.splice(0);
+  function queueCandidate(peerId: string, candidate: RTCIceCandidateInit) {
+    const queued = queuedCandidatesRef.current.get(peerId) || [];
+    queuedCandidatesRef.current.set(peerId, [...queued, candidate]);
+  }
+
+  async function flushQueuedCandidates(peerId: string) {
+    const peer = peersRef.current.get(peerId);
+    if (!peer?.remoteDescription) return;
+    const queued = queuedCandidatesRef.current.get(peerId) || [];
+    queuedCandidatesRef.current.delete(peerId);
     for (const candidate of queued) {
-      await peerRef.current.addIceCandidate(candidate);
+      await peer.addIceCandidate(candidate);
     }
   }
 
@@ -225,7 +284,7 @@ const WebRTC: React.FC = () => {
       setRoomId(cleanRoom);
       roomIdRef.current = cleanRoom;
       setStatus('Starting camera and microphone...');
-      await ensurePeer();
+      await startMedia();
       getSocket().emit('join-room', { roomId: cleanRoom, name: name.trim() || 'Guest' });
       setJoined(true);
       setStatus(`Joined ${cleanRoom}. Waiting for another participant.`);
@@ -235,7 +294,7 @@ const WebRTC: React.FC = () => {
   }
 
   async function createOffer(peerId: string) {
-    const peer = await ensurePeer();
+    const peer = await ensurePeer(peerId);
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
     addDiagnostic('Sending offer');
@@ -257,13 +316,22 @@ const WebRTC: React.FC = () => {
   }
 
   function leaveRoom(reload = true) {
-    peerRef.current?.close();
-    peerRef.current = null;
+    peersRef.current.forEach((peer) => peer.close());
+    peersRef.current.clear();
+    queuedCandidatesRef.current.clear();
+    setRemoteStreams([]);
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     socketRef.current?.disconnect();
     socketRef.current = null;
     if (reload) window.location.reload();
+  }
+
+  function removePeer(peerId: string) {
+    peersRef.current.get(peerId)?.close();
+    peersRef.current.delete(peerId);
+    queuedCandidatesRef.current.delete(peerId);
+    setRemoteStreams((current) => current.filter((remote) => remote.peerId !== peerId));
   }
 
   async function copyLink() {
@@ -280,7 +348,7 @@ const WebRTC: React.FC = () => {
   }
 
   const shareUrl = `${window.location.origin}${window.location.pathname}#${roomId}`;
-  const remoteLabel = remoteConnected ? 'Remote participant' : 'Waiting for participant';
+  const hasRemoteStreams = remoteStreams.length > 0;
 
   return (
     <main className="meet-shell">
@@ -297,16 +365,17 @@ const WebRTC: React.FC = () => {
 
       <section className={joined ? 'meet-layout in-call' : 'meet-layout'}>
         <div className="stage">
-          <div className={remoteConnected ? 'video-tile remote-tile connected' : 'video-tile remote-tile'}>
-            <video ref={remoteVideoRef} autoPlay playsInline />
-            {!remoteConnected && (
+          <div className={hasRemoteStreams ? 'remote-grid has-remotes' : 'remote-grid'}>
+            {!hasRemoteStreams && (
               <div className="empty-video">
                 <span>{roomId.slice(0, 2)}</span>
                 <strong>Share the room link</strong>
                 <p>Another browser or device can join this room to start the call.</p>
               </div>
             )}
-            <div className="tile-label">{remoteLabel}</div>
+            {remoteStreams.map((remote) => (
+              <RemoteVideoTile key={remote.peerId} remote={remote} />
+            ))}
           </div>
 
           <div className="video-tile local-tile">

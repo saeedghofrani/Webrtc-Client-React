@@ -140,6 +140,17 @@ h1 {
   background: #111214;
 }
 
+.remote-grid {
+  position: relative;
+  display: grid;
+  min-height: 100%;
+}
+
+.remote-grid.has-remotes {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 2px;
+}
+
 .video-tile {
   position: relative;
   overflow: hidden;
@@ -211,6 +222,16 @@ h1 {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.empty-video.compact span {
+  width: 4.8rem;
+  height: 4.8rem;
+  font-size: 1.5rem;
+}
+
+.empty-video.compact strong {
+  font-size: 1rem;
 }
 
 .camera-off {

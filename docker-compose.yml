@@ -5,6 +5,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        REACT_APP_SIGNALING_URL: ${REACT_APP_SIGNALING_URL:-}
+        REACT_APP_TURN_URLS: ${REACT_APP_TURN_URLS:-}
+        REACT_APP_TURN_USERNAME: ${REACT_APP_TURN_USERNAME:-}
+        REACT_APP_TURN_CREDENTIAL: ${REACT_APP_TURN_CREDENTIAL:-}
     image: saeedghofrani/webrtc-client:latest
     container_name: webrtc-client
     ports:
