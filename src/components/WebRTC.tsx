@@ -20,6 +20,11 @@ interface RemoteStream {
   connected: boolean;
 }
 
+interface DeviceState {
+  camera: 'unknown' | 'ready' | 'missing' | 'blocked';
+  microphone: 'unknown' | 'ready' | 'missing' | 'blocked';
+}
+
 type SidePanel = 'chat' | 'people';
 
 const iceServers: RTCIceServer[] = [
@@ -80,6 +85,7 @@ const WebRTC: React.FC = () => {
   const [copyLabel, setCopyLabel] = useState('Copy link');
   const [remoteStreams, setRemoteStreams] = useState<RemoteStream[]>([]);
   const [diagnostics, setDiagnostics] = useState<string[]>([]);
+  const [deviceState, setDeviceState] = useState<DeviceState>({ camera: 'unknown', microphone: 'unknown' });
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -110,7 +116,7 @@ const WebRTC: React.FC = () => {
   function getSocket() {
     if (!socketRef.current) {
       const endpoint = process.env.REACT_APP_SIGNALING_URL || window.location.origin;
-      socketRef.current = io(endpoint, { transports: ['polling', 'websocket'] });
+      socketRef.current = io(endpoint, { transports: ['polling'], upgrade: false });
       bindSocket(socketRef.current);
     }
     return socketRef.current;
@@ -184,8 +190,36 @@ const WebRTC: React.FC = () => {
       return null;
     }
     if (!localStreamRef.current) {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (!window.navigator.mediaDevices?.getUserMedia) {
+        setDeviceState({ camera: 'missing', microphone: 'missing' });
+        setStatus('This browser cannot access camera or microphone devices.');
+        return null;
+      }
+      let stream: MediaStream;
+      try {
+        stream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (error) {
+        const deviceError = error instanceof DOMException ? error.name : '';
+        const blocked = ['NotAllowedError', 'SecurityError', 'PermissionDeniedError'].includes(deviceError);
+        const missing = ['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError'].includes(deviceError);
+        setDeviceState({
+          camera: blocked ? 'blocked' : missing ? 'missing' : 'unknown',
+          microphone: blocked ? 'blocked' : missing ? 'missing' : 'unknown',
+        });
+        if (blocked) {
+          setStatus('Camera or microphone permission is blocked in this browser.');
+        } else if (missing) {
+          setStatus('No working camera or microphone was found on this device.');
+        } else {
+          setStatus(error instanceof Error ? error.message : 'Could not access camera or microphone.');
+        }
+        return null;
+      }
       localStreamRef.current = stream;
+      setDeviceState({
+        camera: stream.getVideoTracks().length > 0 ? 'ready' : 'missing',
+        microphone: stream.getAudioTracks().length > 0 ? 'ready' : 'missing',
+      });
       setMicOn(stream.getAudioTracks().some((track) => track.enabled));
       setCameraOn(stream.getVideoTracks().some((track) => track.enabled));
     }
@@ -412,6 +446,11 @@ const WebRTC: React.FC = () => {
                 <div className="people-list">
                   <strong>{users.length} participants</strong>
                   {users.map((user) => <span key={user.id}>{user.name}</span>)}
+                  <div className="device-status">
+                    <strong>Devices</strong>
+                    <p>Camera: {deviceState.camera}</p>
+                    <p>Microphone: {deviceState.microphone}</p>
+                  </div>
                   <div className="diagnostics">
                     <strong>Connection</strong>
                     {diagnostics.length === 0 ? <p>No connection events yet.</p> : diagnostics.map((item) => <p key={item}>{item}</p>)}

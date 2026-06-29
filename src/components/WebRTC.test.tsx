@@ -97,7 +97,7 @@ test('joins a room without creating an untargeted peer connection', async () => 
   fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
 
   await waitFor(() => expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(true));
-  expect(mockIo).toHaveBeenCalledWith(window.location.origin, { transports: ['polling', 'websocket'] });
+  expect(mockIo).toHaveBeenCalledWith(window.location.origin, { transports: ['polling'], upgrade: false });
   expect(window.RTCPeerConnection).not.toHaveBeenCalled;
 });
 
