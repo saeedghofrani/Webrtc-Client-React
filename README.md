@@ -66,6 +66,11 @@ offline recovery, listen-only, and cleanup. Screenshots go to ignored
 `test-artifacts/`. It uses synthetic media: acoustic echo, mobile network quality,
 and the operating system screen-picker still need real-device testing.
 
+`node scripts/verify-turn-auth.cjs` verifies that the deployed TURN service
+rejects unauthenticated allocations. See `deploy/turn/` for the config-readability
+guard and required relay firewall range. The production repair also verified
+forced TCP and UDP relay calls through the public meeting domain.
+
 ## Container build
 
 ```bash

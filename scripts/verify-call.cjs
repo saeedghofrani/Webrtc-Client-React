@@ -36,13 +36,16 @@ async function main() {
   const create = async (width = 390, height = 844) => {
     const context = await browser.newContext({ viewport: { width, height }, permissions: ['camera', 'microphone', 'clipboard-write'] });
     contexts.push(context);
-    await context.addInitScript(({ relay, transport }) => {
+    await context.addInitScript(({ relay, transport, turnHost }) => {
       const Native = window.RTCPeerConnection;
       window.__peers = [];
       window.RTCPeerConnection = class extends Native {
         constructor(config) {
+          if (turnHost) config.iceServers = config.iceServers.map((s) => ({ ...s, urls: [s.urls].flat().map((u) => u.replace('meet.saeedghofrani.xyz', turnHost)) }));
           if (transport) config.iceServers = config.iceServers.map((s) => ({ ...s, urls: [s.urls].flat().filter((u) => u.startsWith('turn:') && u.includes(`transport=${transport}`)) })).filter((s) => s.urls.length);
           super({ ...config, ...(relay ? { iceTransportPolicy: 'relay' } : {}) }); window.__peers.push(this);
+          this.testIceErrors = [];
+          this.addEventListener('icecandidateerror', (e) => this.testIceErrors.push({ code: e.errorCode, message: e.errorText, url: e.url }));
         }
       };
       // Exercise screen-track replacement with a deterministic live source.
@@ -54,7 +57,7 @@ async function main() {
         stream.getTracks()[0].addEventListener('ended', () => clearInterval(timer));
         return stream;
       };
-    }, { relay: process.env.TEST_RELAY === '1', transport: process.env.TEST_TURN_TRANSPORT });
+    }, { relay: process.env.TEST_RELAY === '1', transport: process.env.TEST_TURN_TRANSPORT, turnHost: process.env.TEST_TURN_HOST });
     const page = await context.newPage();
     page.on('pageerror', (e) => errors.push(e.message));
     return page;
@@ -72,6 +75,7 @@ async function main() {
       const pc = window.__peers.filter((p) => p.connectionState !== 'closed').at(-1);
       return pc?.connectionState === 'connected' && video?.readyState >= 2 && !video.paused && video.videoWidth > 0 && video.srcObject.getAudioTracks().some((t) => t.readyState === 'live');
     }, null, { timeout: 30000 }); } catch (error) {
+      console.log('Relay diagnostics:', JSON.stringify(await page.evaluate(() => window.__peers.map((p) => ({ gathering: p.iceGatheringState, errors: p.testIceErrors, servers: p.getConfiguration().iceServers.map((s) => ({ urls: s.urls, hasUsername: Boolean(s.username), hasCredential: Boolean(s.credential) })) }))), null, 2));
       console.log('Call failure:', await page.evaluate(() => ({ status: document.querySelector('[role=status]')?.textContent, alerts: [...document.querySelectorAll('[role=alert]')].map((e) => e.textContent), peers: window.__peers.map((p) => ({ connection: p.connectionState, ice: p.iceConnectionState, signaling: p.signalingState, remote: Boolean(p.remoteDescription) })), videos: [...document.querySelectorAll('video')].map((v) => ({ ready: v.readyState, paused: v.paused, width: v.videoWidth, muted: v.muted, tracks: v.srcObject?.getTracks().map((t) => ({ kind: t.kind, state: t.readyState, muted: t.muted })) })) })));
       await page.screenshot({ path: path.resolve(__dirname, '../test-artifacts/failure.png') });
       throw error;
@@ -123,10 +127,16 @@ async function main() {
     await b.getByText('· presenting', { exact: false }).waitFor();
     await a.getByRole('button', { name: 'Stop sharing screen', exact: true }).click();
     await a.getByRole('button', { name: 'Settings', exact: true }).click();
+    await a.evaluate(() => { window.__oldAudio = document.querySelector('.local-tile video').srcObject.getAudioTracks()[0]; });
+    await a.getByRole('combobox', { name: 'Microphone', exact: true }).selectOption({ index: 1 });
+    await a.waitForFunction(() => window.__oldAudio.readyState === 'ended');
+    await a.evaluate(() => { window.__oldVideo = document.querySelector('.local-tile video').srcObject.getVideoTracks()[0]; });
+    await a.getByRole('combobox', { name: 'Camera', exact: true }).selectOption({ index: 1 });
+    await a.waitForFunction(() => window.__oldVideo.readyState === 'ended');
     await a.getByRole('checkbox', { name: 'Data saver', exact: true }).check();
     await a.getByRole('button', { name: 'Reconnect media', exact: true }).click();
     await a.getByRole('button', { name: 'Close panel', exact: true }).click();
-    console.log('Chat, mute, camera, screen sharing and settings verified');
+    console.log('Chat, mute, camera, screen sharing and device switching verified');
     for (const [width, height, filename] of [[390,844,'mobile-call'], [320,740,'small-phone-call'], [844,390,'landscape-call'], [1366,900,'desktop-call']]) {
       await a.setViewportSize({ width, height }); await geometry(a);
       await a.screenshot({ path: path.join(artifacts, `${filename}.png`) });
