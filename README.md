@@ -1,4 +1,4 @@
-# WebRTC Meeting Client
+# Together Meet
 
 A React and TypeScript client for private, two-person browser meetings. It combines direct WebRTC audio/video transport with Socket.IO signaling, room links, text chat, device-state feedback, and connection diagnostics.
 
@@ -8,7 +8,9 @@ A React and TypeScript client for private, two-person browser meetings. It combi
 - Peer-to-peer audio/video negotiation with SDP offers, answers, and ICE candidates
 - Configurable STUN/TURN connectivity for real-world networks
 - Shareable room URLs and an enforced two-participant room limit
-- Text chat, participant presence, connection status, and bounded diagnostics
+- Text chat, participant presence, measured connection latency, and relay status
+- Screen sharing, camera/microphone selection, and data saver
+- Audio-only fallback, listen-only joining, and automatic reconnect recovery
 - Responsive meeting UI with focused tests around room and device edge cases
 
 ## Architecture
@@ -51,7 +53,18 @@ npm test -- --watchAll=false
 npm run build
 ```
 
-The focused component tests cover joining without an untargeted peer, accepting only one remote participant, clearing media when a room is full, and handling unavailable camera or microphone devices.
+Component tests cover duplicate joining, echo-cancellation constraints, missing-camera fallback, listen-only calls, mobile panel access, full-room cleanup, reconnects, and cancellation during device access.
+
+`npm run test:call` runs Chrome against the production build and the sibling
+`webrtc-server` checkout. Set `CHROME_PATH` for a custom Chrome installation.
+Set `TEST_URL` to verify a deployment, `TEST_RELAY=1` to require TURN, and
+`TEST_TURN_TRANSPORT=tcp` to check TCP-only relay connectivity.
+
+The browser suite checks media packet flow, chat, mute/camera, screen-track
+replacement, layout at 320px/390px/landscape/desktop sizes, capacity, refresh,
+offline recovery, listen-only, and cleanup. Screenshots go to ignored
+`test-artifacts/`. It uses synthetic media: acoustic echo, mobile network quality,
+and the operating system screen-picker still need real-device testing.
 
 ## Container build
 
@@ -61,7 +74,11 @@ docker compose up --build
 
 ## Production status
 
-The application has been deployed as a personal demonstration at `meet.saeedghofrani.xyz`. Public access is temporarily pending the documented DNS and certificate cutover. The project is a demonstration system and does not provide meeting recording, authentication, end-to-end identity verification, or multi-party conferencing.
+The application is deployed at `https://meet.saeedghofrani.xyz`. It supports two
+people per room and does not provide recording, authentication, end-to-end identity
+verification, or multi-party conferencing. Anyone with a room link can join if a
+slot is available. TURN credentials configured in the client are visible to
+browsers and must not be reused for another service.
 
 ## Related repository
 

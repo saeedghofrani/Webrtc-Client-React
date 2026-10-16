@@ -1,5 +1,5 @@
 # Stage 1: Build the React application
-FROM node:18 AS build
+FROM node:22-alpine AS build
 
 # Set the working directory
 WORKDIR /app
@@ -18,7 +18,7 @@ ENV REACT_APP_TURN_CREDENTIAL=$REACT_APP_TURN_CREDENTIAL
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy the rest of the application source code
 COPY . .
@@ -27,7 +27,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Serve the application with a simple Node.js server (serve)
-FROM node:18-alpine
+FROM node:22-alpine
 
 RUN apk add --no-cache curl
 

@@ -2,177 +2,93 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import WebRTC from './WebRTC';
 
-type Handler = (...args: any[]) => void;
-
 class FakeSocket {
-  handlers: Record<string, Handler[]> = {};
+  connected = false;
+  id = 'local';
+  handlers: Record<string, (...args: any[]) => void> = {};
   emitted: Array<{ event: string; payload: any }> = [];
-  id = 'local-socket';
-
-  on(event: string, handler: Handler) {
-    this.handlers[event] = [...(this.handlers[event] || []), handler];
-    return this;
-  }
-
-  emit(event: string, payload: any) {
-    this.emitted.push({ event, payload });
-    return this;
-  }
-
-  disconnect() {}
-
-  dispatch(event: string, payload?: any) {
-    for (const handler of this.handlers[event] || []) {
-      handler(payload);
-    }
-  }
+  on(event: string, handler: (...args: any[]) => void) { this.handlers[event] = handler; return this; }
+  emit(event: string, payload?: any) { this.emitted.push({ event, payload }); }
+  connect() { this.connected = true; this.handlers.connect?.(); }
+  disconnect() { this.connected = false; }
+  removeAllListeners() { this.handlers = {}; }
+  dispatch(event: string, payload?: any) { this.handlers[event]?.(payload); }
 }
-
 const mockSocket = new FakeSocket();
-const mockIo = jest.fn<FakeSocket, [string, any]>(() => mockSocket);
-
-jest.mock('socket.io-client', () => ({
-  io: (endpoint: string, options: any) => mockIo(endpoint, options),
-}));
-
-const createOffer = jest.fn<Promise<RTCSessionDescriptionInit>, []>(async () => ({ type: 'offer', sdp: 'offer-sdp' }));
-const createAnswer = jest.fn<Promise<RTCSessionDescriptionInit>, []>(async () => ({ type: 'answer', sdp: 'answer-sdp' }));
-const setLocalDescription = jest.fn<Promise<void>, [RTCSessionDescriptionInit]>(async () => undefined);
-const setRemoteDescription = jest.fn<Promise<void>, [RTCSessionDescriptionInit]>(async () => undefined);
-const addIceCandidate = jest.fn<Promise<void>, [RTCIceCandidateInit]>(async () => undefined);
-const addTrack = jest.fn();
-const close = jest.fn();
-const stopTrack = jest.fn();
-
-class FakeRTCPeerConnection {
-  onicecandidate: ((event: { candidate: RTCIceCandidateInit | null }) => void) | null = null;
-  onicecandidateerror: ((event: Event) => void) | null = null;
-  oniceconnectionstatechange: (() => void) | null = null;
-  ontrack: ((event: RTCTrackEvent) => void) | null = null;
-  onconnectionstatechange: (() => void) | null = null;
-  remoteDescription: RTCSessionDescriptionInit | null = null;
-  connectionState: RTCPeerConnectionState = 'new';
-  iceConnectionState: RTCIceConnectionState = 'new';
-
-  addTrack = addTrack;
-  createOffer = createOffer;
-  createAnswer = createAnswer;
-  addIceCandidate = addIceCandidate;
-  close = close;
-
-  async setLocalDescription(description: RTCSessionDescriptionInit) {
-    await setLocalDescription(description);
-  }
-
-  async setRemoteDescription(description: RTCSessionDescriptionInit) {
-    this.remoteDescription = description;
-    await setRemoteDescription(description);
-  }
-}
-
-const stream = {
-  getTracks: () => [{ enabled: true, stop: stopTrack }, { enabled: true, stop: stopTrack }],
-  getAudioTracks: () => [{ enabled: true }],
-  getVideoTracks: () => [{ enabled: true }],
-} as unknown as MediaStream;
-
+jest.mock('socket.io-client', () => ({ io: () => mockSocket }));
+let tracks: any[];
+const makeStream = (items: any[]) => ({
+  getTracks: () => items, getAudioTracks: () => items.filter((t) => t.kind === 'audio'),
+  getVideoTracks: () => items.filter((t) => t.kind === 'video'),
+});
 beforeEach(() => {
-  mockSocket.handlers = {};
-  mockSocket.emitted = [];
-  jest.clearAllMocks();
-  mockIo.mockImplementation(() => mockSocket);
-  Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
-  window.location.hash = '';
-  Object.defineProperty(navigator, 'mediaDevices', {
-    configurable: true,
-    value: { getUserMedia: jest.fn(async () => stream) },
-  });
-  window.history.replaceState = jest.fn();
-  window.RTCPeerConnection = jest.fn(() => new FakeRTCPeerConnection()) as any;
+  tracks = ['audio', 'video'].map((kind) => ({ kind, enabled: true, stop: jest.fn(), getSettings: () => ({}) }));
+  mockSocket.handlers = {}; mockSocket.emitted = []; mockSocket.connected = false;
+  window.MediaStream = jest.fn((items = []) => makeStream(items)) as any;
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+    getUserMedia: jest.fn(async () => makeStream(tracks)), enumerateDevices: jest.fn(async () => []),
+  } });
+  window.history.replaceState(null, '', '#TEST');
+  localStorage.clear();
+  HTMLMediaElement.prototype.play = jest.fn(async () => {});
 });
-
-test('joins a room without creating an untargeted peer connection', async () => {
-  render(<WebRTC />);
-
-  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
-
-  await waitFor(() => expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(true));
-  expect(mockIo).toHaveBeenCalledWith(window.location.origin, { transports: ['polling'], upgrade: false });
-  expect(window.RTCPeerConnection).not.toHaveBeenCalled;
+function start() {
+  fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Saeed' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Join call' }));
+}
+async function accepted() {
+  await waitFor(() => expect(mockSocket.emitted.some((e) => e.event === 'join-room')).toBe(true));
+  act(() => mockSocket.dispatch('room-joined', { users: [{ id: 'local', name: 'Saeed' }] }));
+}
+test('joins once, uses echo cancellation and releases tracks on leave', async () => {
+  render(<WebRTC />); start();
+  fireEvent.click(screen.getByRole('button', { name: 'Connecting...' }));
+  await accepted();
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ audio: expect.objectContaining({ echoCancellation: true }) }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mute microphone' }));
+  expect(tracks[0].enabled).toBe(false);
+  expect(tracks[1].enabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Leave call' }));
+  tracks.forEach((t) => expect(t.stop).toHaveBeenCalled());
+  expect((screen.getByRole('button', { name: 'Join call' }))).toBeInTheDocument();
 });
-
-test('only connects to the first remote participant in a two-person room', async () => {
-  render(<WebRTC />);
-
-  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
-  await waitFor(() => expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(true));
-
-  await act(async () => {
-    mockSocket.dispatch('peer-ready', { peerId: 'peer-a', name: 'Ava' });
-    mockSocket.dispatch('peer-ready', { peerId: 'peer-b', name: 'Ben' });
-  });
-
-  await waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
-  expect(window.RTCPeerConnection).toHaveBeenCalledTimes(1);
-  expect(mockSocket.emitted.filter((item) => item.event === 'offer').map((item) => item.payload.to)).toEqual([
-    'peer-a',
-  ]);
+test('falls back to an audio call when camera is missing', async () => {
+  (navigator.mediaDevices.getUserMedia as jest.Mock).mockRejectedValueOnce(new DOMException('Camera missing', 'NotFoundError')).mockResolvedValueOnce(makeStream([tracks[0]]));
+  render(<WebRTC />); start(); await accepted();
+  expect(screen.getByText('Camera unavailable. Joined with audio.')).toBeInTheDocument();
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
 });
-
-test('requests mobile-friendly media with echo cancellation', async () => {
-  const getUserMedia = jest.fn(async () => stream);
-  Object.defineProperty(window.navigator, 'mediaDevices', {
-    configurable: true,
-    value: { getUserMedia },
-  });
-
+test('listen-only works without local devices and mobile panels remain accessible', async () => {
   render(<WebRTC />);
-
-  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
-
-  await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
-  expect(getUserMedia).toHaveBeenCalledWith({
-    video: {
-      width: { ideal: 640, max: 960 },
-      height: { ideal: 360, max: 540 },
-      frameRate: { ideal: 24, max: 24 },
-      facingMode: 'user',
-    },
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  });
+  fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Guest' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Join to listen' })); await accepted();
+  expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+  expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'Hello' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(mockSocket.emitted.some((e) => e.event === 'chat-message' && e.payload.text === 'Hello')).toBe(true);
 });
-
-test('shows room full instead of joining as a third participant', async () => {
-  render(<WebRTC />);
-
-  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
-  await waitFor(() => expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(true));
-
-  act(() => {
-    mockSocket.dispatch('room-full', { roomId: 'ABC123' });
-  });
-
-  expect(screen.getByText('This room already has two people.')).toBeInTheDocument();
-  expect(screen.queryByText('People')).not.toBeInTheDocument();
-  expect((document.querySelector('.local-tile video') as HTMLVideoElement | null)?.srcObject).toBeNull();
+test('room full stops devices and resets the join button', async () => {
+  render(<WebRTC />); start();
+  await waitFor(() => expect(mockSocket.emitted.some((e) => e.event === 'join-room')).toBe(true));
+  act(() => mockSocket.dispatch('room-full'));
+  tracks.forEach((t) => expect(t.stop).toHaveBeenCalled());
+  expect(screen.getByRole('alert')).toHaveTextContent('already has two people');
+  expect(screen.getByRole('button', { name: 'Join call' })).toBeEnabled();
 });
-
-test('does not join when camera or microphone devices are unavailable', async () => {
-  Object.defineProperty(window.navigator, 'mediaDevices', {
-    configurable: true,
-    value: {
-      getUserMedia: jest.fn(() => Promise.reject(new DOMException('No devices', 'NotFoundError'))),
-    },
-  });
-
-  render(<WebRTC />);
-
-  fireEvent.click(screen.getByRole('button', { name: /start \/ join room/i }));
-
-  expect(await screen.findByText('No working camera or microphone was found on this device.')).toBeInTheDocument();
-  expect(mockSocket.emitted.some((item) => item.event === 'join-room')).toBe(false);
+test('rejoins signaling after a disconnect', async () => {
+  render(<WebRTC />); start(); await accepted();
+  act(() => mockSocket.dispatch('connect'));
+  expect(mockSocket.emitted.filter((e) => e.event === 'join-room')).toHaveLength(2);
+});
+test('cancel during permission request stops late media and never joins', async () => {
+  let resolve: (value: any) => void = () => {};
+  (navigator.mediaDevices.getUserMedia as jest.Mock).mockReturnValue(new Promise((r) => { resolve = r; }));
+  render(<WebRTC />); start();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await act(async () => resolve(makeStream(tracks)));
+  tracks.forEach((t) => expect(t.stop).toHaveBeenCalled());
+  expect(mockSocket.emitted.some((e) => e.event === 'join-room')).toBe(false);
 });
