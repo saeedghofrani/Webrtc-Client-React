@@ -23,6 +23,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:call": "node scripts/verify-call.cjs",
+    "test:ringing": "node scripts/verify-ringing.cjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

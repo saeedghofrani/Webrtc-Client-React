@@ -1,6 +1,9 @@
 import React, { FormEvent, useEffect, useRef, useState } from 'react';
 import { Camera, Video, VideoOff, Mic, MicOff, PhoneOff, Link, Check, MessageSquare, Users, Settings, X, Send, MonitorUp, RefreshCw, ArrowRight, Headphones, Maximize, Minimize, ShieldCheck } from 'lucide-react';
 import { normalizeRoom, newRoom, useCall } from './useCall';
+import { useCallLink } from './useCallLink';
+
+declare global { interface Window { __togetherMeetAnswer?: boolean } }
 
 function VideoElement({ stream, muted = false, label }: { stream: MediaStream | null; muted?: boolean; label: string }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -19,6 +22,23 @@ const WebRTC: React.FC = () => {
   const [room, setRoom] = useState(() => normalizeRoom(window.location.hash.slice(1)) || newRoom());
   const [name, setName] = useState(() => { try { return localStorage.getItem('meet-name') || ''; } catch { return ''; } });
   const call = useCall(room, name);
+  const callLink = useCallLink(setRoom);
+  const answered = useRef(false);
+  const [answerRequested, setAnswerRequested] = useState(false);
+  useEffect(() => {
+    const answer = () => { window.__togetherMeetAnswer = false; setName((value) => value || 'Guest'); setAnswerRequested(true); };
+    window.addEventListener('together-meet-answer', answer);
+    if (window.__togetherMeetAnswer) answer();
+    return () => window.removeEventListener('together-meet-answer', answer);
+  }, []);
+  useEffect(() => {
+    if (!answered.current && answerRequested && callLink.token && !callLink.loading && !callLink.error && name) {
+      answered.current = true;
+      void call.join();
+    }
+    // Joining is triggered once after resolving the incoming private link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answerRequested, callLink.token, callLink.loading, callLink.error, name]);
   const [panel, setPanel] = useState<'chat' | 'people' | 'settings' | null>(null);
   const [text, setText] = useState('');
   const [copied, setCopied] = useState(false);
@@ -26,7 +46,7 @@ const WebRTC: React.FC = () => {
   const [fullscreen, setFullscreen] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const messageCount = useRef(0);
-  const invite = `${window.location.origin}${window.location.pathname}#${room}`;
+  const invite = `${window.location.origin}${window.location.pathname}${callLink.token ? `?call=${encodeURIComponent(callLink.token)}` : ''}#${room}`;
   const other = call.users.find((user) => user.id !== call.selfId);
 
   useEffect(() => { window.history.replaceState(null, '', `#${room}`); }, [room]);
@@ -51,7 +71,7 @@ const WebRTC: React.FC = () => {
   function submit(event: FormEvent) {
     event.preventDefault();
     try { localStorage.setItem('meet-name', name.trim()); } catch { /* Private browsing may disable storage. */ }
-    void call.join();
+    if (!callLink.loading) void call.join();
   }
   function send(event: FormEvent) { event.preventDefault(); if (text.trim() && call.chat(text.trim())) setText(''); }
   async function toggleFullscreen() {
@@ -82,9 +102,17 @@ const WebRTC: React.FC = () => {
         <span className="eyebrow">YOUR PRIVATE CALL</span>
         <h2>Ready to meet?</h2>
         <label>Your name<input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="Enter your name" autoComplete="given-name" disabled={call.busy} required /></label>
-        <label>Room code<div className="room-input"><input value={room} onChange={(e) => setRoom(normalizeRoom(e.target.value))} maxLength={24} required disabled={call.busy} spellCheck={false} />{iconButton('Create a new room', <RefreshCw size={18} />, () => setRoom(newRoom()))}</div></label>
-        <button className="primary join-button" disabled={call.busy || !room || !name.trim()} type="submit">{call.busy ? 'Connecting...' : 'Join call'}<ArrowRight size={19} /></button>
-        <button className="secondary" type="button" disabled={call.busy || !name.trim() || !room} onClick={() => void call.join(true)}><Headphones size={18} />Join to listen</button>
+        <label>Room code<div className="room-input"><input value={room} onChange={(e) => setRoom(normalizeRoom(e.target.value))} maxLength={24} required disabled={call.busy || Boolean(callLink.token)} spellCheck={false} />{!callLink.token && iconButton('Create a new room', <RefreshCw size={18} />, () => setRoom(newRoom()))}</div></label>
+        <button className="primary join-button" disabled={call.busy || callLink.loading || !room || !name.trim()} type="submit">{call.busy ? 'Connecting...' : 'Join call'}<ArrowRight size={19} /></button>
+        <button className="secondary" type="button" disabled={call.busy || callLink.loading || !name.trim() || !room} onClick={() => void call.join(true)}><Headphones size={18} />Join to listen</button>
+        {callLink.enabled && <div className="call-link-controls">
+          {callLink.token ? <>
+            <button className="secondary" type="button" disabled={callLink.busy || callLink.loading || !name.trim()} onClick={() => void (callLink.activeCall ? callLink.cancel() : callLink.ring(name))}>{callLink.activeCall ? 'Cancel ringing' : 'Ring recipient'}</button>
+            <a href={`intent://meet.saeedghofrani.xyz/?call=${callLink.token}#Intent;scheme=https;package=xyz.saeedghofrani.meet;end`}>Open in Android app to enable ringing</a>
+          </> : <button className="secondary" type="button" disabled={callLink.busy || call.busy} onClick={() => void callLink.create()}>Create a private ringing link</button>}
+          {callLink.progress && <p role="status">{callLink.progress}</p>}
+        </div>}
+        {callLink.error && <p role="alert">{callLink.error}</p>}
         <button className="text-button" type="button" onClick={() => void copy()}>{copied ? <Check size={17} /> : <Link size={17} />}{copied ? 'Link copied' : 'Copy invitation link'}</button>
         {call.busy && <button className="text-button" type="button" onClick={call.leave}>Cancel</button>}
       </form>

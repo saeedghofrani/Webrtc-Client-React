@@ -85,6 +85,9 @@ hr { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 12px 0; 
 .chat-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .messages { flex: 1; overflow: auto; min-height: 0; padding: 20px 16px; }
 .panel-empty { color: var(--muted); font-size: 13px; text-align: center; padding-top: 20px; }
+.call-link-controls { display: grid; gap: 12px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.call-link-controls a { color: var(--accent); }
+.call-link-controls p { margin: 0; }
 .messages article { margin-bottom: 22px; }
 .message-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
 .message-meta strong { overflow-wrap: anywhere; min-width: 0; }

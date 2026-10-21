@@ -28,7 +28,8 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
     getUserMedia: jest.fn(async () => makeStream(tracks)), enumerateDevices: jest.fn(async () => []),
   } });
-  window.history.replaceState(null, '', '#TEST');
+  window.history.replaceState(null, '', '/#TEST');
+  delete window.__togetherMeetAnswer;
   localStorage.clear();
   HTMLMediaElement.prototype.play = jest.fn(async () => {});
 });
@@ -91,4 +92,25 @@ test('cancel during permission request stops late media and never joins', async 
   await act(async () => resolve(makeStream(tracks)));
   tracks.forEach((t) => expect(t.stop).toHaveBeenCalled());
   expect(mockSocket.emitted.some((e) => e.event === 'join-room')).toBe(false);
+});
+
+test('an incoming link cannot auto-enable media through URL parameters', async () => {
+  window.history.replaceState(null, '', `/?call=${'a'.repeat(43)}&answered=1#TEST`);
+  global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ enabled: true, room: 'PRIVATE' }) })) as any;
+  render(<WebRTC />);
+  await screen.findByRole('button', { name: 'Ring recipient' });
+  expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  expect(mockSocket.emitted.some((e) => e.event === 'join-room')).toBe(false);
+});
+
+test('native answer joins only after the private room has resolved', async () => {
+  window.history.replaceState(null, '', `/?call=${'a'.repeat(43)}#TEST`);
+  let resolve: (value: any) => void = () => {};
+  global.fetch = jest.fn(() => new Promise((done) => { resolve = done; })) as any;
+  render(<WebRTC />);
+  act(() => window.dispatchEvent(new Event('together-meet-answer')));
+  expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  await act(async () => resolve({ ok: true, json: async () => ({ enabled: true, room: 'PRIVATE' }) }));
+  await accepted();
+  expect(mockSocket.emitted.find((e) => e.event === 'join-room')?.payload.roomId).toBe('PRIVATE');
 });

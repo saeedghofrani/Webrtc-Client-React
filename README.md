@@ -85,6 +85,26 @@ verification, or multi-party conferencing. Anyone with a room link can join if a
 slot is available. TURN credentials configured in the client are visible to
 browsers and must not be reused for another service.
 
+## Android ringing links
+
+When the updated signaling server reports incoming calls enabled, the prejoin
+screen offers **Create a private ringing link**. Share the generated URL; the
+recipient opens it in the Android app and explicitly enables ringing. The caller
+uses **Ring recipient**, then joins the meeting. Call status reports answer,
+decline, cancellation, or expiry; push acceptance is not proof a device rang.
+
+The Android app, Firebase configuration, and `/api/call-links` proxy routing must
+be deployed together. Ordinary room invitations still work with push disabled.
+Private links stay in their assigned room and failed lookups block joining to
+avoid sending a recipient into a random room. Anyone holding a private link can
+ring it, so share it privately. Android source/setup is at
+[webrtc-android](https://github.com/saeedghofrani/webrtc-android) (private repository).
+
+`npm run test:ringing` checks the production web bundle against a local server
+with a fake push transport: link creation, recipient opt-in, call delivery,
+authenticated answer, caller status, and mobile layout. It does not verify FCM or
+Android ringing. Normal call verification remains `npm run test:call`.
+
 ## Related repository
 
 - [WebRTC signaling server](https://github.com/saeedghofrani/webrtc-server)
